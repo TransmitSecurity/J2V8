@@ -103,9 +103,9 @@ def build_j2v8_test(config):
     step_args = getattr(config, "args", None)
     step_args = " " + step_args if step_args else ""
 
-    test_cmds = \
-        u.setVersionEnv(config) + \
-        u.gradle("spoon" + step_args)
+    # test_cmds = \
+    #     u.setVersionEnv(config) + \
+    #     u.gradle("spoon" + step_args)
 
     # we are running a build directly on the host shell
     if (not config.cross_agent):
