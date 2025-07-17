@@ -32,6 +32,13 @@
 using namespace std;
 using namespace v8;
 
+// Force inclusion of fortified functions
+__attribute__((used))
+static void trigger_fortify_usage() {
+    char buffer[8];
+    strcpy(buffer, "test"); // Triggers __strcpy_chk if fortify is enabled
+}
+
 inline std::string convertStringViewToSTDString(Isolate* isolate, const v8_inspector::StringView stringView) {
   int length = static_cast<int>(stringView.length());
   v8::Local<v8::String> message = (

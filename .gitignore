@@ -37,3 +37,4 @@ test-mockup-os-release
 *.tar.*
 
 local.properties
+ndk-r26d/*
