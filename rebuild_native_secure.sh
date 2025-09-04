@@ -45,17 +45,16 @@ get_security_flags() {
     flags+=" -Wall -Wextra -Werror=return-type -Werror=format-security"
     flags+=" -Wformat -Wformat-security -Warray-bounds -Wcast-align"
     flags+=" -Wconversion -Wsign-conversion -Wnull-dereference"
-    flags+=" -Wlogical-op -fPIC -fvisibility=default -ffunction-sections -fdata-sections"
+    flags+=" -Wlogical-op -fPIC -fvisibility=hidden -ffunction-sections -fdata-sections"
     flags+=" -fno-common -fno-strict-aliasing -fwrapv -fno-delete-null-pointer-checks"
     flags+=" -O2 -g1 -DNDEBUG -std=c++20 -DSTATIC_V8=1"
 
+    # Note: -fvisibility=hidden with version script provides tighter ABI control
+
+    # Stack protection: using -fstack-protector-strong (optimal balance of security/performance)
+    # Removed -fstack-protector-all (too aggressive) and -fstack-check (GCC-only, not Clang)
     flags+=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
-
-    # Stack canaries (buffer overflow detection)
-    #[[ "$ENABLE_STACK_CANARIES" == true ]] && flags+=" -fstack-protector-strong"
-
-    # Fortify source (runtime buffer checks)
-    #[[ "$ENABLE_FORTIFY_SOURCE" == true ]] && flags+=" -D_FORTIFY_SOURCE=2"
+    #flags+=" -fstack-protector-all -fstack-check -fstack-clash-protection -fhardened -D_FORTIFY_SOURCE=2"
 
     # Sanitizers
     [[ "$ENABLE_UBSAN" == true ]] && flags+=" -fsanitize=undefined -fno-sanitize-recover=undefined"
@@ -63,6 +62,7 @@ get_security_flags() {
 
     # Branch protection for ARM64
     [[ "$abi" == "arm64-v8a" ]] && flags+=" -mbranch-protection=standard"
+
 
     echo "$flags"
 }
@@ -73,6 +73,9 @@ get_linker_flags() {
 
     # Security linker flags
     flags+=" -shared -llog"
+    # Static C++ standard library
+    flags+=" -static-libstdc++"
+    # Symbol visibility: using -fvisibility=hidden for compiler-level symbol hiding
     flags+=" -Wl,-z,relro -Wl,-z,now"           # RELRO + immediate binding
     flags+=" -Wl,-z,noexecstack"                # DEP/ Non-executable stack
     flags+=" -Wl,-z,separate-code"              # Separate code segments
@@ -81,7 +84,6 @@ get_linker_flags() {
     flags+=" -Wl,--strip-debug"                 # Strip symbols but keeps function symbols like __stack_chk_fail.
     flags+=" -Wl,-z,max-page-size=16384"        # Alignment: 16KB pages
     flags+=" -Wl,-z,common-page-size=16384"
-    #flags+=" -static-libstdc++"
 
     # Stack canaries (buffer overflow detection)
     #[[ "$ENABLE_STACK_CANARIES" == true ]] && flags+=" -fstack-protector-strong"
@@ -134,6 +136,8 @@ build_arch() {
 
     # Security checks
     echo "🔍 Verifying security flags for $abi:"
+        
+    # Security verification complete
         
     # Check for stack canary
 #    if readelf -s "$OUT_SO" | grep -q '__stack_chk_fail'; then

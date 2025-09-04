@@ -5,7 +5,7 @@ apply plugin: 'signing'
 ext {
     PUBLISH_GROUP_ID = 'com.eclipsesource.j2v8'
     archivesBaseName = 'j2v8'
-    PUBLISH_VERSION = '6.2.1.1'
+    PUBLISH_VERSION = '6.2.1.2-SNAPSHOT'
     PUBLISH_ARTIFACT_ID  = 'j2v8-transmit'
 
     //version = System.getenv('J2V8_FULL_VERSION')

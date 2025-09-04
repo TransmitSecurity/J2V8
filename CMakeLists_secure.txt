@@ -37,7 +37,12 @@ endif()
 if(J2V8_ENABLE_HARDENING)
     # Common security flags for GCC/Clang
     set(SECURITY_FLAGS "
-        -fstack-protector-strong	# Stack canaries
+        
+        -fstack-protector-all       # Stack canaries
+        -fstack-check               # Fortified functions
+        -fstack-clash-protection    # Fortified functions
+       # -fhardened                  # Fortified functions
+
         -D_FORTIFY_SOURCE=2		# Fortified functions
         -fPIE				# Position Independent Executable
         -fPIC				# Position Independent Code
