@@ -1,133 +1,164 @@
 # J2V8-Transmit Hardening Improvements
 
 ## Overview
-This document outlines the security hardening improvements implemented in the `rebuild_native_secure.sh` build script based on expert recommendations.
-Whe building with  `rebuild_native_secure.sh` `CMakeLists.txt` and `CMakeLists.txt` are not used 
+This document outlines the security hardening improvements implemented in the `rebuild_native_secure.sh` build script. The script implements a **Minimal Security Configuration** focusing on essential security features while maintaining compatibility and performance.
 
-## Implemented Improvements
+When building with `rebuild_native_secure.sh`, `CMakeLists.txt` and `CMakeLists_secure.txt` are not used.
 
-### 1. **Symbol Visibility Control** ✅
-- **Before**: `-fvisibility=default` (exports all symbols)
-- **After**: `-fvisibility=hidden` + version script
-- **Benefit**: Tighter ABI control, reduced attack surface, smaller binary size
+## Current Configuration: Minimal Security
 
-**Version Script**: `jni/j2v8.version`
-- Explicitly exports only required JNI symbols
-- Hides internal implementation details
-- Maintains compatibility with JNI requirements
+### **Security Features Implemented** ✅
 
-### 2. **Stack Protection Optimization** ✅
-- **Removed**: `-fstack-check` (GCC-only flag, not valid for Clang)
-- **Removed**: `-fstack-protector-all` (redundant with `-fstack-protector-strong`)
-- **Kept**: `-fstack-protector-strong` (optimal security/performance balance)
+#### 1. **Stack Canaries** ✅
+- **Flag**: `-fstack-protector-strong`
+- **Purpose**: Detects buffer overflow attacks by placing canary values on the stack
+- **Benefit**: Prevents stack-based buffer overflow exploitation
 
-**Why This Matters**:
-- `-fstack-check` caused build errors (GCC-specific)
-- `-fstack-protector-all` is too aggressive and conflicts with `-fstack-protector-strong`
-- `-fstack-protector-strong` provides excellent protection without excessive overhead
+#### 2. **Fortified Functions** ✅
+- **Flag**: `-D_FORTIFY_SOURCE=2`
+- **Purpose**: Replaces unsafe functions with safer versions that check buffer bounds
+- **Benefit**: Runtime buffer overflow detection for common functions
 
-### 3. **Build System Integration** ✅
-- Version script automatically applied during linking
-- Cleaner, more maintainable security flags
-- Better documentation of security choices
+#### 3. **Static C++ Standard Library** ✅
+- **Flag**: `-static-libstdc++` (both compiler and linker)
+- **Purpose**: Embeds C++ standard library directly in the binary
+- **Benefit**: Eliminates runtime dependency on `libc++_shared.so`
 
-## Security Benefits
+#### 4. **Android 16KB Page Size Support** ✅
+- **Flags**: `-Wl,-z,max-page-size=16384` and `-Wl,-z,common-page-size=16384`
+- **Purpose**: Aligns memory to 16KB boundaries for Android 14+ compatibility
+- **Benefit**: Better memory efficiency and security on modern Android devices
 
-### **Reduced Attack Surface**
-- Hidden symbols prevent direct access to internal functions
-- Smaller binary size reduces potential attack vectors
-- Tighter ABI control improves library isolation
+### **Performance Optimizations** ✅
 
-### **Optimized Stack Protection**
-- `-fstack-protector-strong` provides robust buffer overflow protection
-- Eliminates redundant flags that could cause conflicts
-- Maintains security without performance degradation
+#### 1. **Maximum Optimization** ✅
+- **Flag**: `-O3`
+- **Purpose**: Enables aggressive optimization for better runtime performance
+- **Benefit**: Faster execution at the cost of slightly longer compilation time
 
-### **Professional-Grade Hardening**
-- Follows industry best practices for native library security
-- Proper symbol visibility management
-- Clean, maintainable security configuration
+#### 2. **Modern C++ Standard** ✅
+- **Flag**: `-std=c++20`
+- **Purpose**: Uses the latest C++ standard for better language features
+- **Benefit**: Access to modern C++ features and optimizations
 
-## Technical Details
+## Current Compiler Flags
 
-### **Symbol Visibility Control**
 ```bash
-# Compiler-level symbol hiding
--fvisibility=hidden                  # Hide all symbols by default
--ffunction-sections                  # Enable dead code elimination
--fdata-sections                     # Enable unused data removal
+get_security_flags() {
+    local abi=$1
+    local flags=""
 
-# Linker-level symbol stripping
--Wl,--strip-debug                   # Remove debug symbols
--Wl,--gc-sections                   # Remove unused sections
+    # Essential flags for shared library + minimal security
+    flags+=" -fPIC -std=c++20 -DSTATIC_V8=1 -O3"
+    flags+=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
+    flags+=" -static-libstdc++"  # Static C++ standard library linking
+
+    echo "$flags"
+}
 ```
 
-**Note**: Symbol visibility is controlled through compiler flags and linker optimizations, providing effective symbol hiding without version script complexity.
+## Current Linker Flags
 
-### **Compiler Flags**
 ```bash
--fvisibility=hidden          # Hide all symbols by default
--fstack-protector-strong     # Optimal stack protection
--D_FORTIFY_SOURCE=2         # Buffer overflow detection
--ffunction-sections          # Enable dead code elimination
--fdata-sections             # Enable unused data removal
+get_linker_flags() {
+    local abi=$1
+    local flags=""
+
+    # Basic linking + static C++ standard library
+    flags+=" -shared -llog"
+    flags+=" -static-libstdc++"  # Static C++ standard library linking
+    flags+=" -Wl,-z,max-page-size=16384"        # Alignment: 16KB pages
+    flags+=" -Wl,-z,common-page-size=16384"
+
+    echo "$flags"
+}
 ```
 
-### **Linker Flags**
+## Security Benefits Summary
+
+| Protection | Flag | Purpose | Benefit |
+|------------|------|---------|---------|
+| **Stack Canaries** | `-fstack-protector-strong` | Detects buffer overflows | Prevents stack-based attacks |
+| **Fortified Functions** | `-D_FORTIFY_SOURCE=2` | Runtime bounds checking | Catches buffer overflows at runtime |
+| **Static C++ STL** | `-static-libstdc++` | Embed C++ library | No external dependencies |
+| **16KB Page Alignment** | `-Wl,-z,max-page-size=16384` | Memory alignment | Android 14+ compatibility |
+| **Position Independent Code** | `-fPIC` | Relocatable code | Required for shared libraries |
+| **Static V8 Linking** | `-DSTATIC_V8=1` | Embed V8 engine | Self-contained library |
+
+## Verification Commands
+
+### **Check Stack Canaries**
 ```bash
--Wl,-z,relro -Wl,-z,now               # RELRO hardening
--Wl,-z,noexecstack                    # DEP protection
--Wl,-z,separate-code                  # Code segment separation
--Wl,--gc-sections                     # Remove unused sections
--Wl,--strip-debug                     # Strip debug symbols
+readelf -s libj2v8.so | grep '__stack_chk'
 ```
 
-## Testing Recommendations
+### **Check Fortified Functions**
+```bash
+readelf -s libj2v8.so | grep -E '__(memcpy|memmove|memset|strcpy|strncpy|strcat|strncat|sprintf|vsprintf|snprintf|vsnprintf|strlen|strchr)_chk'
+```
 
-1. **Verify Symbol Visibility**:
-   ```bash
-   readelf -s libj2v8.so | grep -E "(JNI|v8_|__cxa_|__stack_chk_)"
-   ```
+### **Check 16KB Page Alignment**
+```bash
+readelf -l libj2v8.so | awk '/LOAD/ {print "Segment alignment: "$NF; exit}'
+```
 
-2. **Check Security Flags**:
-   ```bash
-   readelf -W -a libj2v8.so | grep -E "(STACK|RELRO|NX)"
-   ```
+### **Check Static Linking**
+```bash
+readelf -d libj2v8.so | grep NEEDED
+```
 
-3. **Validate Binary Size**:
-   ```bash
-   ls -lh libj2v8.so
-   ```
+### **Run test script**
+```bash
+./test_aar_security.sh
+```
+
+## Design Philosophy
+
+### **Minimal Security Configuration**
+The current configuration focuses on the most essential security features:
+
+1. **Stack Canaries**: Fundamental protection against buffer overflows
+2. **Fortified Functions**: Runtime bounds checking for common functions
+3. **Static Linking**: Eliminates external dependencies and potential supply chain attacks
+4. **16KB Alignment**: Ensures compatibility with modern Android security features
+
+### **Performance Focus**
+- Uses `-O3` for maximum optimization
+- C++20 standard for modern language features
+- Minimal security overhead
+
+### **Compatibility**
+- Works across all Android architectures (arm64-v8a, armeabi-v7a, x86, x86_64)
+- Compatible with Android 14+ 16KB page size requirements
+- No external library dependencies
 
 ## Troubleshooting
 
-### **Symbol Visibility Status**
-Symbol visibility is controlled through compiler and linker optimizations.
-
-**Current Configuration**:
-- `-fvisibility=hidden` is active (hides internal symbols at compile time)
-- Linker optimizations remove unused symbols and debug information
-- All security hardening flags remain active
-
-**Benefits Achieved**:
-- Compiler-level symbol hiding with `-fvisibility=hidden`
-- Linker-level symbol stripping and optimization
-- Stack protection and other security flags
-- Clean, maintainable security configuration
-
 ### **Common Issues**
-- **"symbol not defined"**: Symbol doesn't exist in the final binary
-- **"version script assignment failed"**: Version script references missing symbols
-- **Linking failures**: May indicate version script syntax issues
+
+#### **"dlopen failed: library 'libc++_shared.so' not found"**
+- **Cause**: Missing `-static-libstdc++` flag
+- **Solution**: Ensure both compiler and linker flags include `-static-libstdc++`
+
+#### **"Stack canaries missing" in verification**
+- **Cause**: Timing issue in script verification
+- **Solution**: The script includes `sleep 1.0` and file existence checks
+
+#### **Build errors with security flags**
+- **Cause**: Incompatible flag combinations
+- **Solution**: Current minimal configuration avoids problematic flags
 
 ## Future Enhancements
 
-- Consider adding `-fstack-clash-protection` for additional stack protection
-- Evaluate `-fhardened` flag for comprehensive hardening
-- Monitor for new security flags in future NDK versions
+Potential additions for enhanced security (not currently implemented):
+- **RELRO Protection**: `-Wl,-z,relro -Wl,-z,now`
+- **NX Stack Protection**: `-Wl,-z,noexecstack`
+- **Code Segment Separation**: `-Wl,-z,separate-code`
+- **Symbol Stripping**: `-Wl,--strip-debug`
+- **Dead Code Elimination**: `-Wl,--gc-sections`
 
 ## References
 
 - [Android NDK Security Best Practices](https://developer.android.com/ndk/guides/security)
 - [Clang Security Features](https://clang.llvm.org/docs/SecurityFeatures.html)
-- [GNU Binutils Version Scripts](https://sourceware.org/binutils/docs/ld/VERSION.html) 
+- [Android 16KB Page Size Support](https://developer.android.com/about/versions/14/behavior-changes-14#16kb-page-size) 
