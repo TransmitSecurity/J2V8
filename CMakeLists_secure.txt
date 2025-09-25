@@ -1,0 +1,185 @@
+# Security-Hardened J2V8 CMakeLists.txt
+# Based on original CMakeLists.txt with added security features
+
+cmake_minimum_required(VERSION 3.6)
+project(j2v8)
+set(CMAKE_VERBOSE_MAKEFILE ON)
+
+# Ensure release builds have at least -O2 optimization for fortify to work
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+
+# set up the module path
+set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+
+include(BuildUtils)
+include(Policies)
+
+#-----------------------------------------------------------------------
+# ANDROID-ONLY SECURITY CONFIGURATION
+#-----------------------------------------------------------------------
+
+# Enable security features by default
+option(J2V8_ENABLE_HARDENING "Enable comprehensive security hardening" ON)
+option(J2V8_ENABLE_ASAN "Enable AddressSanitizer for debug builds" OFF)
+option(J2V8_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+
+# Set target architecture
+set(J2V8_TARGET_ARCH "arm64-v8a" CACHE STRING "The target architecture for the Android build.")
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+    message(FATAL_ERROR "This CMake file is for Android builds only.")
+endif()
+
+#-----------------------------------------------------------------------
+# SECURITY COMPILER FLAGS
+#-----------------------------------------------------------------------
+if(J2V8_ENABLE_HARDENING)
+    # Common security flags for GCC/Clang
+    set(SECURITY_FLAGS "
+        
+        -fstack-protector-all       # Stack canaries
+        -fstack-check               # Fortified functions
+        -fstack-clash-protection    # Fortified functions
+       # -fhardened                  # Fortified functions
+
+        -D_FORTIFY_SOURCE=2		# Fortified functions
+        -fPIE				# Position Independent Executable
+        -fPIC				# Position Independent Code
+        -Wformat			# Format string vulnerability detection
+	
+        -Wformat-security		# Enhanced format string security
+        -Werror=format-security		# Make format security warnings errors
+        -Werror=implicit-function-declaration	# Catch undeclared functions
+        -Werror=incompatible-pointer-types	# Catch type confusion
+        -Warray-bounds			# Array bounds checking
+        -Wcast-align			# Alignment casting warnings
+        -Wconversion			# Type conversion warnings
+        -Wsign-conversion		# Sign conversion warnings
+        -Wnull-dereference		# Null pointer dereference detection
+        -fno-delete-null-pointer-checks # Don't optimize away null checks
+        -fwrapv				# Define signed integer overflow behavior
+        -fstack-clash-protection
+    ")
+
+    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+        #  PAC (Pointer Authentication) and BTI (Branch Target Identification)
+        list(APPEND SECURITY_FLAGS -mbranch-protection=standard)
+    endif()
+
+    # Security flags for linking
+    set(SECURITY_LDFLAGS "
+        -Wl,-z,relro			            # Read-only relocations
+        -Wl,-z,now                          # Immediate binding
+        -Wl,-z,noexecstack		            # Non-executable stack
+        -Wl,-z,max-page-size=16384          # 16KB page size alignmen
+        -Wl,-z,common-page-size=16384       # 16KB page size alignmen
+    ")
+endif()
+
+#-----------------------------------------------------------------------
+# SANITIZERS (OPTIONAL)
+#-----------------------------------------------------------------------
+if(J2V8_ENABLE_ASAN)
+    set(SANITIZER_FLAGS "-fsanitize=address -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${SANITIZER_FLAGS}")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${SANITIZER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${SANITIZER_FLAGS}")
+endif()
+
+if(J2V8_ENABLE_UBSAN)
+    set(UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=undefined")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${UBSAN_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${UBSAN_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${UBSAN_FLAGS}")
+endif()
+
+message("--------------------------------------------------")
+message("J2V8_LIB_ARCH_NAME     = ${J2V8_LIB_ARCH_NAME}")
+message("J2V8_LIB_VENDOR_NAME   = ${J2V8_LIB_VENDOR_NAME}")
+message("J2V8_LIB_PLATFORM_NAME = ${J2V8_LIB_PLATFORM_NAME}")
+message("J2V8_TARGET_ARCH       = ${J2V8_TARGET_ARCH}")
+message("J2V8_BUILD_X64         = ${J2V8_BUILD_X64}")
+message("--------------------------------------------------")
+
+#-----------------------------------------------------------------------
+# INCLUDE DIRECTORIES & SOURCE FILES
+#-----------------------------------------------------------------------
+
+# look for dependencies
+find_package(Java)
+
+# j2v8 dependency options
+set(J2V8_JDK_DIR ${Java_ROOT} CACHE STRING "Path to the Java JDK dependency")
+#set(J2V8_V8_DIR "${CMAKE_SOURCE_DIR}/v8.out" CACHE STRING "Path to the V8 JS engine dependency")
+set(J2V8_V8_DIR "${CMAKE_SOURCE_DIR}/v8.out" CACHE STRING "Path to the V8 monolith")
+
+include_directories(${J2V8_V8_DIR}/include)
+
+set(src_files
+    jni/com_eclipsesource_v8_V8Impl.cpp
+    jni/com_eclipsesource_v8_V8Impl.h
+)
+
+source_group("" FILES ${src_files})
+
+#-----------------------------------------------------------------------
+# BUILD SETTINGS & COMPILATION
+#-----------------------------------------------------------------------
+
+# tell gcc/clang to use the c++20 standard
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(J2V8_ENABLE_HARDENING)
+    string(REPLACE "\n" " " SECURITY_FLAGS_STR "${SECURITY_FLAGS}")
+    string(REPLACE "\n" " " SECURITY_LDFLAGS_STR "${SECURITY_LDFLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SECURITY_FLAGS_STR}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SECURITY_FLAGS_STR}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${SECURITY_LDFLAGS_STR}")
+endif()
+
+# create the j2v8 library
+add_library(v8_monolith STATIC IMPORTED)
+set_target_properties(v8_monolith PROPERTIES
+    IMPORTED_LOCATION ${J2V8_V8_DIR}/${CMAKE_ANDROID_ARCH_ABI}/libv8_monolith.a)
+
+add_library(j2v8 SHARED ${src_files})
+
+# Apply security hardening flags directly to the target
+if(J2V8_ENABLE_HARDENING)
+    target_compile_options(j2v8 PRIVATE ${SECURITY_FLAGS})
+    target_link_options(j2v8 PRIVATE ${SECURITY_LDFLAGS})
+    target_compile_options(v8_monolith INTERFACE ${SECURITY_FLAGS})
+endif()
+
+# build output directory
+set(LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
+
+# set the include directories
+include_directories(${include_dirs})
+
+# link the necessary libraries
+target_link_libraries(j2v8
+    v8_monolith
+    debug "${j2v8_Debug_libs}"
+    optimized "${j2v8_Release_libs}"
+    "${libgcc}"
+)
+
+#-----------------------------------------------------------------------
+# OUTPUT SETTINGS & POST-BUILD
+#-----------------------------------------------------------------------
+
+# set library output filename
+set(LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
+set(J2V8_LIB_PLATFORM_NAME "android")
+set(J2V8_LIB_ARCH_NAME ${CMAKE_ANDROID_ARCH_ABI})
+
+set_target_properties(j2v8 PROPERTIES OUTPUT_NAME "${J2V8_LIB_PREFIX}${PROJECT_NAME}${J2V8_LIB_VENDOR_NAME}-${J2V8_LIB_PLATFORM_NAME}-${J2V8_LIB_ARCH_NAME}")
+
+message(STATUS "[J2V8] Android build enabled with hardening: ${J2V8_ENABLE_HARDENING}")
+message(STATUS "C_FLAGS: ${CMAKE_C_FLAGS}")
+message(STATUS "CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
+message(STATUS "LDFLAGS: ${CMAKE_SHARED_LINKER_FLAGS}")

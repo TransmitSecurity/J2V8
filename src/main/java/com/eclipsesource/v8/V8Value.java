@@ -328,7 +328,7 @@ abstract public class V8Value implements Releasable {
         return v8.strictEquals(v8.getV8RuntimePtr(), getHandle(), ((V8Value) that).getHandle());
     }
 
-    public long getHandle() {
+    protected long getHandle() {
         checkReleased();
         return objectHandle;
     }

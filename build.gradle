@@ -2,13 +2,18 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 apply plugin: 'signing'
 
-group = 'com.eclipsesource.j2v8'
-archivesBaseName = 'j2v8'
-version = System.getenv('J2V8_FULL_VERSION')
+ext {
+    PUBLISH_GROUP_ID = 'com.eclipsesource.j2v8'
+    archivesBaseName = 'j2v8'
+    PUBLISH_VERSION = '6.2.1.2'
+    PUBLISH_ARTIFACT_ID  = 'j2v8-transmit'
 
-ext."signing.secretKeyRingFile" = '/.gnupg/secring.gpg'
-ext."signing.password" = System.getenv("KEYSTORE_PASSWORD")
-ext."signing.keyId" = System.getenv("KEY_ID")
+    //version = System.getenv('J2V8_FULL_VERSION')
+
+    ext."signing.secretKeyRingFile" = '/.gnupg/secring.gpg'
+    ext."signing.password" = System.getenv("KEYSTORE_PASSWORD")
+    ext."signing.keyId" = System.getenv("KEY_ID")
+}
 
 buildscript {
     repositories {
@@ -43,6 +48,7 @@ dependencies {
 android {
     namespace 'com.eclipsesource.v8'
     compileSdk 35
+     compileSdkVersion 35
     
     defaultConfig {
         minSdkVersion 21
@@ -68,6 +74,12 @@ android {
         // androidTest.setRoot('src/test')
     }
 
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
 }
 
 // see: https://github.com/square/spoon
@@ -86,11 +98,42 @@ spoon {
     }
 }
 
+tasks.named("publish").configure {
+    dependsOn("assembleRelease")
+}
+
+tasks.named("publishToMavenLocal").configure {
+    dependsOn("assembleRelease")
+}
+
 afterEvaluate {
     publishing {
+        repositories {
+            maven {
+                credentials {
+                    username nexusDeployUsername
+                    password nexusDeployPassword
+                }
+                if (project.PUBLISH_VERSION.endsWith("-SNAPSHOT")) {
+                    url = "${nexusRepoSnapshot}"
+                } else {
+                    url = "${nexusRepo}"
+                }
+            }
+        }
         publications {
             maven(MavenPublication) {
-                artifact bundleReleaseAar
+                groupId = project.PUBLISH_GROUP_ID
+                artifactId = project.PUBLISH_ARTIFACT_ID
+                version = project.PUBLISH_VERSION
+
+                from components.release
+
+                pom {
+                    name = 'J2V8 Transmit'
+                    description = 'Security-hardened fork of J2V8 with 16KB alignment'
+                    url = 'https://github.com/eclipsesource/J2V8'
+                }
             }
         }
     }
