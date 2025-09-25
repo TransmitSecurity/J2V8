@@ -5,7 +5,7 @@ apply plugin: 'signing'
 ext {
     PUBLISH_GROUP_ID = 'com.eclipsesource.j2v8'
     archivesBaseName = 'j2v8'
-    PUBLISH_VERSION = '6.2.1.2-SNAPSHOT'
+    PUBLISH_VERSION = '6.2.1.2'
     PUBLISH_ARTIFACT_ID  = 'j2v8-transmit'
 
     //version = System.getenv('J2V8_FULL_VERSION')
@@ -22,11 +22,11 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.7.3'
-       // classpath 'com.stanfy.spoon:spoon-gradle-plugin:1.2.2'
+        classpath 'com.stanfy.spoon:spoon-gradle-plugin:1.2.2'
     }
 }
 
-//apply plugin: 'spoon'
+apply plugin: 'spoon'
 
 repositories {
     google()
@@ -83,20 +83,20 @@ android {
 }
 
 // see: https://github.com/square/spoon
-// spoon {
-//     // for debug output
-//     debug = true
+spoon {
+    // for debug output
+    debug = true
 
-//     // To run only specified test classes
-//     if (project.hasProperty('testClass')) {
-//         className = project.testClass
-//     }
+    // To run only specified test classes
+    if (project.hasProperty('testClass')) {
+        className = project.testClass
+    }
 
-//     // To run a single method in TestCase
-//     if (project.hasProperty('testMethod')) {
-//         methodName = project.testMethod
-//     }
-// }
+    // To run a single method in TestCase
+    if (project.hasProperty('testMethod')) {
+        methodName = project.testMethod
+    }
+}
 
 tasks.named("publish").configure {
     dependsOn("assembleRelease")
